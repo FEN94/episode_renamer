@@ -11,7 +11,6 @@ Create a python app that rename multiple files for episodes of shows.
 - Show in the table two columns. One that shows the current files names, the other is an editable columns to put the episode number.
 - Load on the table mp4 and mkv files.
 - Button to start the rename process.
-- Rename file with show name and prompt me to enter the episode number.
 
 ## 3. File naming
 - "<Show_name> <SXXEXX>" (without quotes) where **show_name** is the name of the show, **SXX** is the season of the show, and **EXX** is the episode.
