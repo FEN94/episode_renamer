@@ -10,7 +10,7 @@ class EpisodeRenamer(ctk.CTk):
         super().__init__()
 
         self.title("Episode Renamer")
-        self.geometry("700x550")
+        self.geometry("750x580")
 
         self.folder_path = ""
         self.file_entries = []  # Stores (original_filename, CTkEntry) tuples
@@ -41,7 +41,10 @@ class EpisodeRenamer(ctk.CTk):
 
         # Action Buttons
         self.btn_load = ctk.CTkButton(self.top_frame, text="Load Files", command=self.load_files)
-        self.btn_load.grid(row=2, column=0, columnspan=2, padx=5, pady=10, sticky="ew")
+        self.btn_load.grid(row=2, column=0, padx=5, pady=10, sticky="ew")
+
+        self.btn_autofill = ctk.CTkButton(self.top_frame, text="Auto-Fill Episodes", command=self.auto_fill_episodes)
+        self.btn_autofill.grid(row=2, column=1, padx=5, pady=10, sticky="ew")
 
         self.btn_rename = ctk.CTkButton(self.top_frame, text="Start Rename Process", fg_color="green", hover_color="darkgreen", command=self.rename_files)
         self.btn_rename.grid(row=2, column=2, columnspan=2, padx=5, pady=10, sticky="ew")
@@ -97,6 +100,15 @@ class EpisodeRenamer(ctk.CTk):
             entry_ep.grid(row=idx, column=1, padx=10, pady=2, sticky="ew")
 
             self.file_entries.append((filename, entry_ep))
+
+    def auto_fill_episodes(self):
+        if not self.file_entries:
+            messagebox.showwarning("Warning", "No loaded files to fill.")
+            return
+
+        for idx, (_, entry_ep) in enumerate(self.file_entries, start=1):
+            entry_ep.delete(0, "end")
+            entry_ep.insert(0, f"{idx:02d}")
 
     def rename_files(self):
         show_name = self.entry_show_name.get().strip()
