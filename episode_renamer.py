@@ -1,7 +1,7 @@
 import os
 import re
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
@@ -11,7 +11,7 @@ class EpisodeRenamer(ctk.CTk):
         super().__init__()
 
         self.title("Episode Renamer")
-        self.geometry("1000x620")
+        self.geometry("1000x680")
 
         self.folder_path = ""
         self.file_entries = []  # Stores (original_filename, CTkEntry, CTkLabel_Preview) tuples
@@ -61,7 +61,25 @@ class EpisodeRenamer(ctk.CTk):
 
         # --- Table / Scrollable Frame Panel ---
         self.table_frame = ctk.CTkScrollableFrame(self, label_text="Files")
-        self.table_frame.pack(pady=10, padx=10, fill="both", expand=True)
+        self.table_frame.pack(pady=(10, 5), padx=10, fill="both", expand=True)
+
+        # --- Status Bar & Progress Indicator Panel ---
+        self.status_frame = ctk.CTkFrame(self)
+        self.status_frame.pack(pady=(0, 10), padx=10, fill="x")
+
+        self.progress_bar = ctk.CTkProgressBar(self.status_frame)
+        self.progress_bar.pack(fill="x", padx=10, pady=(8, 4))
+        self.progress_bar.set(0)
+
+        self.lbl_status = ctk.CTkLabel(self.status_frame, text="Ready", anchor="w", font=ctk.CTkFont(size=12))
+        self.lbl_status.pack(fill="x", padx=10, pady=(0, 6))
+
+    def set_status(self, text: str, text_color: str = None):
+        """Helper to update status label text and color non-blockingly."""
+        if text_color:
+            self.lbl_status.configure(text=text, text_color=text_color)
+        else:
+            self.lbl_status.configure(text=text, text_color=("black", "white"))
 
     def select_folder(self):
         path = filedialog.askdirectory()
@@ -117,7 +135,7 @@ class EpisodeRenamer(ctk.CTk):
         self.folder_path = self.entry_folder.get().strip()
 
         if not self.folder_path or not os.path.isdir(self.folder_path):
-            messagebox.showwarning("Warning", "Please select or paste a valid directory path.")
+            self.set_status("Warning: Please select or paste a valid directory path.", "orange")
             return
 
         # Clear existing rows
@@ -145,7 +163,8 @@ class EpisodeRenamer(ctk.CTk):
         files.sort()
 
         if not files:
-            messagebox.showinfo("Info", "No video files (.mp4, .mkv, .avi, .mov, .m4v, .webm, .ts) found in the selected folder.")
+            self.progress_bar.set(0)
+            self.set_status("Info: No supported video files found in the selected folder.", "orange")
             return
 
         # Populate rows with Regex pre-fill and dynamic preview listeners
@@ -171,11 +190,13 @@ class EpisodeRenamer(ctk.CTk):
 
         # Initial preview calculations
         self.update_all_previews()
+        self.progress_bar.set(0)
+        self.set_status(f"Loaded {len(files)} file(s) from selected directory.")
 
     def detect_episodes_regex(self):
         """Re-runs Regex extraction across all table rows."""
         if not self.file_entries:
-            messagebox.showwarning("Warning", "No loaded files to scan.")
+            self.set_status("Warning: No loaded files to scan.", "orange")
             return
 
         for filename, entry_ep, _ in self.file_entries:
@@ -185,11 +206,12 @@ class EpisodeRenamer(ctk.CTk):
                 entry_ep.insert(0, detected_ep)
 
         self.update_all_previews()
+        self.set_status("Re-scanned episode numbers via Regex.")
 
     def auto_fill_sequential(self):
         """Sequential 1, 2, 3... fallback fill."""
         if not self.file_entries:
-            messagebox.showwarning("Warning", "No loaded files to fill.")
+            self.set_status("Warning: No loaded files to fill.", "orange")
             return
 
         for idx, (_, entry_ep, _) in enumerate(self.file_entries, start=1):
@@ -197,29 +219,38 @@ class EpisodeRenamer(ctk.CTk):
             entry_ep.insert(0, f"{idx:02d}")
 
         self.update_all_previews()
+        self.set_status("Applied sequential episode numbers.")
 
     def rename_files(self):
         show_name = self.entry_show_name.get().strip()
         season_str = self.entry_season.get().strip()
 
         if not show_name:
-            messagebox.showwarning("Warning", "Please enter a Show Name.")
+            self.set_status("Warning: Please enter a Show Name.", "orange")
             return
 
         if not season_str.isdigit():
-            messagebox.showwarning("Warning", "Please enter a valid numeric Season Number.")
+            self.set_status("Warning: Please enter a valid numeric Season Number.", "orange")
             return
 
         season_num = int(season_str)
         rename_history = []
+        total_files = len(self.file_entries)
 
-        for original_name, ep_entry, _ in self.file_entries:
+        if total_files == 0:
+            self.set_status("Warning: No files loaded to rename.", "orange")
+            return
+
+        self.progress_bar.set(0)
+
+        for idx, (original_name, ep_entry, _) in enumerate(self.file_entries, start=1):
             ep_str = ep_entry.get().strip()
             if not ep_str:
+                self.progress_bar.set(idx / total_files)
                 continue  # Skip files without an assigned episode number
 
             if not ep_str.isdigit():
-                messagebox.showerror("Error", f"Invalid episode number '{ep_str}' for file {original_name}.")
+                self.set_status(f"Error: Invalid episode number '{ep_str}' for file '{original_name}'.", "#ff4d4d")
                 return
 
             ep_num = int(ep_str)
@@ -231,53 +262,55 @@ class EpisodeRenamer(ctk.CTk):
             old_full_path = os.path.join(self.folder_path, original_name)
             new_full_path = os.path.join(self.folder_path, new_name)
 
-            if old_full_path == new_full_path:
-                continue
+            if old_full_path != new_full_path:
+                try:
+                    os.rename(old_full_path, new_full_path)
+                    rename_history.append((old_full_path, new_full_path))
+                except Exception as e:
+                    self.set_status(f"Error renaming '{original_name}': {e}", "#ff4d4d")
+                    break
 
-            try:
-                os.rename(old_full_path, new_full_path)
-                rename_history.append((old_full_path, new_full_path))
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to rename {original_name}:\n{e}")
-                break
+            self.progress_bar.set(idx / total_files)
+            self.update_idletasks()
 
         if rename_history:
             self.last_rename_history = rename_history
             self.btn_undo.configure(state="normal")
-            messagebox.showinfo("Success", f"Successfully renamed {len(rename_history)} file(s)!")
+            self.set_status(f"Success: Successfully renamed {len(rename_history)} file(s)!", "#2fa572")
             self.load_files()  # Refresh table after renaming
 
     def undo_rename(self):
         if not self.last_rename_history:
-            messagebox.showwarning("Warning", "No rename history available to undo.")
+            self.set_status("Warning: No rename history available to undo.", "orange")
             return
 
         reverted_count = 0
         failed_count = 0
+        total_items = len(self.last_rename_history)
+
+        self.progress_bar.set(0)
 
         # Roll back in reverse order of execution
-        for old_full_path, new_full_path in reversed(self.last_rename_history):
-            if not os.path.exists(new_full_path):
+        for idx, (old_full_path, new_full_path) in enumerate(reversed(self.last_rename_history), start=1):
+            if not os.path.exists(new_full_path) or (os.path.exists(old_full_path) and old_full_path != new_full_path):
                 failed_count += 1
-                continue
+            else:
+                try:
+                    os.rename(new_full_path, old_full_path)
+                    reverted_count += 1
+                except Exception:
+                    failed_count += 1
 
-            if os.path.exists(old_full_path) and old_full_path != new_full_path:
-                failed_count += 1
-                continue
-
-            try:
-                os.rename(new_full_path, old_full_path)
-                reverted_count += 1
-            except Exception:
-                failed_count += 1
+            self.progress_bar.set(idx / total_items)
+            self.update_idletasks()
 
         self.last_rename_history.clear()
         self.btn_undo.configure(state="disabled")
 
         if failed_count > 0:
-            messagebox.showwarning("Rollback Complete", f"Reverted {reverted_count} file(s).\nFailed to revert {failed_count} file(s) due to missing paths or file collisions.")
+            self.set_status(f"Rollback Complete: Reverted {reverted_count} file(s). Failed {failed_count} file(s).", "orange")
         else:
-            messagebox.showinfo("Rollback Complete", f"Successfully reverted {reverted_count} file(s) to original names!")
+            self.set_status(f"Rollback Complete: Reverted {reverted_count} file(s) to original names!", "#2fa572")
 
         self.load_files()
 

@@ -14,6 +14,7 @@ Create a python app that rename multiple files for episodes of shows.
 - Button to start the rename process.
 - Add preview column to show the new Filename before the rename process.
 - Undo/rollback option in case of any mistake
+- add status bar/progress indicator when the rename process start.
 
 ## 3. File naming
 - "<Show_name> <SXXEXX>" (without quotes) where **show_name** is the name of the show, **SXX** is the season of the show, and **EXX** is the episode.
