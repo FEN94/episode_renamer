@@ -11,10 +11,10 @@ class EpisodeRenamer(ctk.CTk):
         super().__init__()
 
         self.title("Episode Renamer")
-        self.geometry("800x620")
+        self.geometry("950x620")
 
         self.folder_path = ""
-        self.file_entries = []  # Stores (original_filename, CTkEntry) tuples
+        self.file_entries = []  # Stores (original_filename, CTkEntry, CTkLabel_Preview) tuples
 
         # --- Top Control Panel ---
         self.top_frame = ctk.CTkFrame(self)
@@ -30,11 +30,13 @@ class EpisodeRenamer(ctk.CTk):
         ctk.CTkLabel(self.top_frame, text="Show Name:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
         self.entry_show_name = ctk.CTkEntry(self.top_frame, placeholder_text="e.g., Breaking Bad")
         self.entry_show_name.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        self.entry_show_name.bind("<KeyRelease>", lambda event: self.update_all_previews())
 
         # Season Input
         ctk.CTkLabel(self.top_frame, text="Season Number:").grid(row=1, column=2, padx=5, pady=5, sticky="e")
         self.entry_season = ctk.CTkEntry(self.top_frame, placeholder_text="e.g., 1")
         self.entry_season.grid(row=1, column=3, padx=5, pady=5, sticky="ew")
+        self.entry_season.bind("<KeyRelease>", lambda event: self.update_all_previews())
 
         self.top_frame.columnconfigure(1, weight=1)
         self.top_frame.columnconfigure(3, weight=1)
@@ -65,10 +67,8 @@ class EpisodeRenamer(ctk.CTk):
 
     def extract_episode_number(self, filename: str) -> str:
         """Uses Regex patterns to find episode numbers in common release formats."""
-        # Remove extension before matching
         name_without_ext = os.path.splitext(filename)[0]
 
-        # Common patterns ordered by priority/specificity:
         patterns = [
             r'[Ss]\d+[Ee](\d+)',        # S01E02 / s01e02 -> 02
             r'\d+[Xx](\d+)',             # 1x02 / 1X02 -> 02
@@ -84,8 +84,31 @@ class EpisodeRenamer(ctk.CTk):
 
         return ""
 
+    def generate_preview_name(self, original_filename: str, ep_str: str) -> str:
+        """Helper to construct the expected new filename."""
+        show_name = self.entry_show_name.get().strip()
+        season_str = self.entry_season.get().strip()
+
+        if not show_name or not season_str.isdigit() or not ep_str.isdigit():
+            return "-"
+
+        season_num = int(season_str)
+        ep_num = int(ep_str)
+        ext = os.path.splitext(original_filename)[1]
+
+        return f"{show_name} S{season_num:02d}E{ep_num:02d}{ext}"
+
+    def update_row_preview(self, filename: str, entry_ep: ctk.CTkEntry, lbl_preview: ctk.CTkLabel):
+        """Updates the preview label for a single file row."""
+        new_name = self.generate_preview_name(filename, entry_ep.get().strip())
+        lbl_preview.configure(text=new_name)
+
+    def update_all_previews(self):
+        """Refreshes preview labels across all table rows."""
+        for filename, entry_ep, lbl_preview in self.file_entries:
+            self.update_row_preview(filename, entry_ep, lbl_preview)
+
     def load_files(self):
-        # Always fetch path directly from entry to handle manual paste
         self.folder_path = self.entry_folder.get().strip()
 
         if not self.folder_path or not os.path.isdir(self.folder_path):
@@ -100,22 +123,27 @@ class EpisodeRenamer(ctk.CTk):
         # Headers
         lbl_h1 = ctk.CTkLabel(self.table_frame, text="Current Filename", font=ctk.CTkFont(weight="bold"))
         lbl_h1.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        
         lbl_h2 = ctk.CTkLabel(self.table_frame, text="Episode Number (EXX)", font=ctk.CTkFont(weight="bold"))
         lbl_h2.grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
-        self.table_frame.columnconfigure(0, weight=3)
-        self.table_frame.columnconfigure(1, weight=1)
+        lbl_h3 = ctk.CTkLabel(self.table_frame, text="Preview Filename", font=ctk.CTkFont(weight="bold"))
+        lbl_h3.grid(row=0, column=2, padx=10, pady=5, sticky="w")
 
-        # Filter mp4 and mkv files
-        valid_extensions = (".mp4", ".mkv")
+        self.table_frame.columnconfigure(0, weight=2)
+        self.table_frame.columnconfigure(1, weight=1)
+        self.table_frame.columnconfigure(2, weight=2)
+
+        # Filter supported video files
+        valid_extensions = (".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm", ".ts")
         files = [f for f in os.listdir(self.folder_path) if f.lower().endswith(valid_extensions)]
         files.sort()
 
         if not files:
-            messagebox.showinfo("Info", "No .mp4 or .mkv files found in the selected folder.")
+            messagebox.showinfo("Info", "No video files (.mp4, .mkv, .avi, .mov, .m4v, .webm, .ts) found in the selected folder.")
             return
 
-        # Populate rows with Regex pre-fill
+        # Populate rows with Regex pre-fill and dynamic preview listeners
         for idx, filename in enumerate(files, start=1):
             lbl_file = ctk.CTkLabel(self.table_frame, text=filename, anchor="w")
             lbl_file.grid(row=idx, column=0, padx=10, pady=2, sticky="ew")
@@ -123,12 +151,21 @@ class EpisodeRenamer(ctk.CTk):
             entry_ep = ctk.CTkEntry(self.table_frame, placeholder_text="e.g., 01")
             entry_ep.grid(row=idx, column=1, padx=10, pady=2, sticky="ew")
 
+            lbl_preview = ctk.CTkLabel(self.table_frame, text="-", anchor="w", text_color="gray70")
+            lbl_preview.grid(row=idx, column=2, padx=10, pady=2, sticky="ew")
+
             # Regex auto-detection on load
             detected_ep = self.extract_episode_number(filename)
             if detected_ep:
                 entry_ep.insert(0, detected_ep)
 
-            self.file_entries.append((filename, entry_ep))
+            # Bind typing event to update preview dynamically
+            entry_ep.bind("<KeyRelease>", lambda event, f=filename, e=entry_ep, p=lbl_preview: self.update_row_preview(f, e, p))
+
+            self.file_entries.append((filename, entry_ep, lbl_preview))
+
+        # Initial preview calculations
+        self.update_all_previews()
 
     def detect_episodes_regex(self):
         """Re-runs Regex extraction across all table rows."""
@@ -136,11 +173,13 @@ class EpisodeRenamer(ctk.CTk):
             messagebox.showwarning("Warning", "No loaded files to scan.")
             return
 
-        for filename, entry_ep in self.file_entries:
+        for filename, entry_ep, _ in self.file_entries:
             detected_ep = self.extract_episode_number(filename)
             entry_ep.delete(0, "end")
             if detected_ep:
                 entry_ep.insert(0, detected_ep)
+
+        self.update_all_previews()
 
     def auto_fill_sequential(self):
         """Sequential 1, 2, 3... fallback fill."""
@@ -148,9 +187,11 @@ class EpisodeRenamer(ctk.CTk):
             messagebox.showwarning("Warning", "No loaded files to fill.")
             return
 
-        for idx, (_, entry_ep) in enumerate(self.file_entries, start=1):
+        for idx, (_, entry_ep, _) in enumerate(self.file_entries, start=1):
             entry_ep.delete(0, "end")
             entry_ep.insert(0, f"{idx:02d}")
+
+        self.update_all_previews()
 
     def rename_files(self):
         show_name = self.entry_show_name.get().strip()
@@ -167,7 +208,7 @@ class EpisodeRenamer(ctk.CTk):
         season_num = int(season_str)
         renamed_count = 0
 
-        for original_name, ep_entry in self.file_entries:
+        for original_name, ep_entry, _ in self.file_entries:
             ep_str = ep_entry.get().strip()
             if not ep_str:
                 continue  # Skip files without an assigned episode number
