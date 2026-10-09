@@ -1,4 +1,5 @@
 import os
+import re
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
@@ -10,7 +11,7 @@ class EpisodeRenamer(ctk.CTk):
         super().__init__()
 
         self.title("Episode Renamer")
-        self.geometry("750x580")
+        self.geometry("800x620")
 
         self.folder_path = ""
         self.file_entries = []  # Stores (original_filename, CTkEntry) tuples
@@ -22,9 +23,8 @@ class EpisodeRenamer(ctk.CTk):
         self.btn_select_folder = ctk.CTkButton(self.top_frame, text="Select Folder", command=self.select_folder)
         self.btn_select_folder.grid(row=0, column=0, padx=5, pady=5)
 
-        self.entry_folder = ctk.CTkEntry(self.top_frame, placeholder_text="No folder selected", text_color="gray")
+        self.entry_folder = ctk.CTkEntry(self.top_frame, placeholder_text="No folder selected")
         self.entry_folder.grid(row=0, column=1, columnspan=3, padx=5, pady=5, sticky="ew")
-        self.entry_folder.bind("<KeyRelease>", lambda e: self.update_folder_path())
 
         # Show Name Input
         ctk.CTkLabel(self.top_frame, text="Show Name:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
@@ -43,11 +43,14 @@ class EpisodeRenamer(ctk.CTk):
         self.btn_load = ctk.CTkButton(self.top_frame, text="Load Files", command=self.load_files)
         self.btn_load.grid(row=2, column=0, padx=5, pady=10, sticky="ew")
 
-        self.btn_autofill = ctk.CTkButton(self.top_frame, text="Auto-Fill Episodes", command=self.auto_fill_episodes)
-        self.btn_autofill.grid(row=2, column=1, padx=5, pady=10, sticky="ew")
+        self.btn_detect_regex = ctk.CTkButton(self.top_frame, text="Detect EP via Regex", command=self.detect_episodes_regex)
+        self.btn_detect_regex.grid(row=2, column=1, padx=5, pady=10, sticky="ew")
 
-        self.btn_rename = ctk.CTkButton(self.top_frame, text="Start Rename Process", fg_color="green", hover_color="darkgreen", command=self.rename_files)
-        self.btn_rename.grid(row=2, column=2, columnspan=2, padx=5, pady=10, sticky="ew")
+        self.btn_autofill = ctk.CTkButton(self.top_frame, text="Sequential Fill", command=self.auto_fill_sequential)
+        self.btn_autofill.grid(row=2, column=2, padx=5, pady=10, sticky="ew")
+
+        self.btn_rename = ctk.CTkButton(self.top_frame, text="Start Rename", fg_color="green", hover_color="darkgreen", command=self.rename_files)
+        self.btn_rename.grid(row=2, column=3, padx=5, pady=10, sticky="ew")
 
         # --- Table / Scrollable Frame Panel ---
         self.table_frame = ctk.CTkScrollableFrame(self, label_text="Files")
@@ -60,12 +63,33 @@ class EpisodeRenamer(ctk.CTk):
             self.entry_folder.delete(0, "end")
             self.entry_folder.insert(0, self.folder_path)
 
-    def update_folder_path(self):
-        self.folder_path = self.entry_folder.get().strip()
+    def extract_episode_number(self, filename: str) -> str:
+        """Uses Regex patterns to find episode numbers in common release formats."""
+        # Remove extension before matching
+        name_without_ext = os.path.splitext(filename)[0]
+
+        # Common patterns ordered by priority/specificity:
+        patterns = [
+            r'[Ss]\d+[Ee](\d+)',        # S01E02 / s01e02 -> 02
+            r'\d+[Xx](\d+)',             # 1x02 / 1X02 -> 02
+            r'[Ee][Pp]?\s*(\d+)',        # EP02 / ep.02 / E02 -> 02
+            r'(?:[^\d]|^)(\d{1,3})(?:[^\d]|$)' # Standalone 1 to 3 digit numbers -> 02
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, name_without_ext)
+            if match:
+                ep_num = int(match.group(1))
+                return f"{ep_num:02d}"
+
+        return ""
 
     def load_files(self):
-        if not self.folder_path:
-            messagebox.showwarning("Warning", "Please select a folder first.")
+        # Always fetch path directly from entry to handle manual paste
+        self.folder_path = self.entry_folder.get().strip()
+
+        if not self.folder_path or not os.path.isdir(self.folder_path):
+            messagebox.showwarning("Warning", "Please select or paste a valid directory path.")
             return
 
         # Clear existing rows
@@ -91,17 +115,35 @@ class EpisodeRenamer(ctk.CTk):
             messagebox.showinfo("Info", "No .mp4 or .mkv files found in the selected folder.")
             return
 
-        # Populate rows
+        # Populate rows with Regex pre-fill
         for idx, filename in enumerate(files, start=1):
             lbl_file = ctk.CTkLabel(self.table_frame, text=filename, anchor="w")
             lbl_file.grid(row=idx, column=0, padx=10, pady=2, sticky="ew")
 
-            entry_ep = ctk.CTkEntry(self.table_frame, placeholder_text="e.g., 1")
+            entry_ep = ctk.CTkEntry(self.table_frame, placeholder_text="e.g., 01")
             entry_ep.grid(row=idx, column=1, padx=10, pady=2, sticky="ew")
+
+            # Regex auto-detection on load
+            detected_ep = self.extract_episode_number(filename)
+            if detected_ep:
+                entry_ep.insert(0, detected_ep)
 
             self.file_entries.append((filename, entry_ep))
 
-    def auto_fill_episodes(self):
+    def detect_episodes_regex(self):
+        """Re-runs Regex extraction across all table rows."""
+        if not self.file_entries:
+            messagebox.showwarning("Warning", "No loaded files to scan.")
+            return
+
+        for filename, entry_ep in self.file_entries:
+            detected_ep = self.extract_episode_number(filename)
+            entry_ep.delete(0, "end")
+            if detected_ep:
+                entry_ep.insert(0, detected_ep)
+
+    def auto_fill_sequential(self):
+        """Sequential 1, 2, 3... fallback fill."""
         if not self.file_entries:
             messagebox.showwarning("Warning", "No loaded files to fill.")
             return
@@ -142,6 +184,9 @@ class EpisodeRenamer(ctk.CTk):
             
             old_full_path = os.path.join(self.folder_path, original_name)
             new_full_path = os.path.join(self.folder_path, new_name)
+
+            if old_full_path == new_full_path:
+                continue
 
             try:
                 os.rename(old_full_path, new_full_path)

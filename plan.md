@@ -9,7 +9,8 @@ Create a python app that rename multiple files for episodes of shows.
 - Button to load the files into a tables
 - Take the show name as a entry and season.
 - Show in the table two columns. One that shows the current files names, the other is an editable columns to put the episode number.
-- Load on the table mp4 and mkv files.
+- Load on the table mp4, mkv, avi, mov, m4v, webm and ts files.
+- Regex auto-detection for episode numbers.
 - Button to start the rename process.
 
 ## 3. File naming
