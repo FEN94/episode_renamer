@@ -13,6 +13,7 @@ Create a python app that rename multiple files for episodes of shows.
 - Regex auto-detection for episode numbers.
 - Button to start the rename process.
 - Add preview column to show the new Filename before the rename process.
+- Undo/rollback option in case of any mistake
 
 ## 3. File naming
 - "<Show_name> <SXXEXX>" (without quotes) where **show_name** is the name of the show, **SXX** is the season of the show, and **EXX** is the episode.

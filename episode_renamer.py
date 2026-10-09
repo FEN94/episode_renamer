@@ -11,10 +11,11 @@ class EpisodeRenamer(ctk.CTk):
         super().__init__()
 
         self.title("Episode Renamer")
-        self.geometry("950x620")
+        self.geometry("1000x620")
 
         self.folder_path = ""
         self.file_entries = []  # Stores (original_filename, CTkEntry, CTkLabel_Preview) tuples
+        self.last_rename_history = []  # Stores list of (old_full_path, new_full_path) for rollback
 
         # --- Top Control Panel ---
         self.top_frame = ctk.CTkFrame(self)
@@ -24,22 +25,23 @@ class EpisodeRenamer(ctk.CTk):
         self.btn_select_folder.grid(row=0, column=0, padx=5, pady=5)
 
         self.entry_folder = ctk.CTkEntry(self.top_frame, placeholder_text="No folder selected")
-        self.entry_folder.grid(row=0, column=1, columnspan=3, padx=5, pady=5, sticky="ew")
+        self.entry_folder.grid(row=0, column=1, columnspan=4, padx=5, pady=5, sticky="ew")
 
         # Show Name Input
         ctk.CTkLabel(self.top_frame, text="Show Name:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
         self.entry_show_name = ctk.CTkEntry(self.top_frame, placeholder_text="e.g., Breaking Bad")
-        self.entry_show_name.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        self.entry_show_name.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
         self.entry_show_name.bind("<KeyRelease>", lambda event: self.update_all_previews())
 
         # Season Input
-        ctk.CTkLabel(self.top_frame, text="Season Number:").grid(row=1, column=2, padx=5, pady=5, sticky="e")
+        ctk.CTkLabel(self.top_frame, text="Season Number:").grid(row=1, column=3, padx=5, pady=5, sticky="e")
         self.entry_season = ctk.CTkEntry(self.top_frame, placeholder_text="e.g., 1")
-        self.entry_season.grid(row=1, column=3, padx=5, pady=5, sticky="ew")
+        self.entry_season.grid(row=1, column=4, padx=5, pady=5, sticky="ew")
         self.entry_season.bind("<KeyRelease>", lambda event: self.update_all_previews())
 
         self.top_frame.columnconfigure(1, weight=1)
-        self.top_frame.columnconfigure(3, weight=1)
+        self.top_frame.columnconfigure(2, weight=1)
+        self.top_frame.columnconfigure(4, weight=1)
 
         # Action Buttons
         self.btn_load = ctk.CTkButton(self.top_frame, text="Load Files", command=self.load_files)
@@ -51,8 +53,11 @@ class EpisodeRenamer(ctk.CTk):
         self.btn_autofill = ctk.CTkButton(self.top_frame, text="Sequential Fill", command=self.auto_fill_sequential)
         self.btn_autofill.grid(row=2, column=2, padx=5, pady=10, sticky="ew")
 
+        self.btn_undo = ctk.CTkButton(self.top_frame, text="Undo Rename", fg_color="orange", hover_color="darkorange", state="disabled", command=self.undo_rename)
+        self.btn_undo.grid(row=2, column=3, padx=5, pady=10, sticky="ew")
+
         self.btn_rename = ctk.CTkButton(self.top_frame, text="Start Rename", fg_color="green", hover_color="darkgreen", command=self.rename_files)
-        self.btn_rename.grid(row=2, column=3, padx=5, pady=10, sticky="ew")
+        self.btn_rename.grid(row=2, column=4, padx=5, pady=10, sticky="ew")
 
         # --- Table / Scrollable Frame Panel ---
         self.table_frame = ctk.CTkScrollableFrame(self, label_text="Files")
@@ -206,7 +211,7 @@ class EpisodeRenamer(ctk.CTk):
             return
 
         season_num = int(season_str)
-        renamed_count = 0
+        rename_history = []
 
         for original_name, ep_entry, _ in self.file_entries:
             ep_str = ep_entry.get().strip()
@@ -231,13 +236,50 @@ class EpisodeRenamer(ctk.CTk):
 
             try:
                 os.rename(old_full_path, new_full_path)
-                renamed_count += 1
+                rename_history.append((old_full_path, new_full_path))
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to rename {original_name}:\n{e}")
-                return
+                break
 
-        messagebox.showinfo("Success", f"Successfully renamed {renamed_count} file(s)!")
-        self.load_files()  # Refresh table after renaming
+        if rename_history:
+            self.last_rename_history = rename_history
+            self.btn_undo.configure(state="normal")
+            messagebox.showinfo("Success", f"Successfully renamed {len(rename_history)} file(s)!")
+            self.load_files()  # Refresh table after renaming
+
+    def undo_rename(self):
+        if not self.last_rename_history:
+            messagebox.showwarning("Warning", "No rename history available to undo.")
+            return
+
+        reverted_count = 0
+        failed_count = 0
+
+        # Roll back in reverse order of execution
+        for old_full_path, new_full_path in reversed(self.last_rename_history):
+            if not os.path.exists(new_full_path):
+                failed_count += 1
+                continue
+
+            if os.path.exists(old_full_path) and old_full_path != new_full_path:
+                failed_count += 1
+                continue
+
+            try:
+                os.rename(new_full_path, old_full_path)
+                reverted_count += 1
+            except Exception:
+                failed_count += 1
+
+        self.last_rename_history.clear()
+        self.btn_undo.configure(state="disabled")
+
+        if failed_count > 0:
+            messagebox.showwarning("Rollback Complete", f"Reverted {reverted_count} file(s).\nFailed to revert {failed_count} file(s) due to missing paths or file collisions.")
+        else:
+            messagebox.showinfo("Rollback Complete", f"Successfully reverted {reverted_count} file(s) to original names!")
+
+        self.load_files()
 
 if __name__ == "__main__":
     app = EpisodeRenamer()
